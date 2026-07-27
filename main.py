@@ -71,7 +71,11 @@ def atom_features(atom):
         int(atom.GetIsAromatic()),
         atom.GetFormalCharge(),
         atom.GetNumImplicitHs(),
-        atom.GetAtomMapNum(),
+        int(atom.IsInRing()),
+        atom.GetNumRadicalElectrons(),
+        int(atom.GetHybridization() == Chem.rdchem.HybridizationType.SP),
+        int(atom.GetHybridization() == Chem.rdchem.HybridizationType.SP2),
+        int(atom.GetHybridization() == Chem.rdchem.HybridizationType.SP3),
     ]
     return one_hot + other
 
@@ -93,6 +97,8 @@ def bond_features(bond):
         int(bt == 3.0),
         int(bond.GetIsConjugated()),
         int(bond.IsInRing()),
+        int(bond.GetStereo() != Chem.rdchem.BondStereo.STEREONONE),
+        int(bond.GetIsAromatic()),
     ]
 
 def mol_to_graph(smiles: str) -> dict | None:
@@ -220,8 +226,10 @@ print(d.edge_y.shape)
 node_dim = train_data[0].x.shape[1]
 edge_dim = train_data[0].edge_attr.shape[1]
 
-model = ReactionCenterGNN(node_dim=node_dim, edge_dim=edge_dim, hidden_dim=64, n_layers=3)
+model = ReactionCenterGNN(node_dim=node_dim, edge_dim=edge_dim, hidden_dim=128, n_layers=4)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer, mode='min', factor=0.5, patience=3)
 
 pos_weight = torch.tensor([10.0])
 criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -285,4 +293,7 @@ for epoch in range(30):
     val_loss = eval_epoch(val_loader)
     val_top1 = topk_accuracy(val_loader, k=1)
     val_top3 = topk_accuracy(val_loader, k=3)
+
+    scheduler.step(val_loss)
+
     print(f"Epoch {epoch+1 :02d} | Train loss: {train_loss:.4f} | Val loss: {val_loss:.4f} | Top-1: {val_top1:.3f} | Top-3: {val_top3:.3f}")
